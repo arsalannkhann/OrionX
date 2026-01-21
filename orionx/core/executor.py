@@ -243,44 +243,65 @@ class WorkflowExecutor:
         """Execute steps respecting dependency graph."""
         step_map = {s.uid: s for s in steps}
         completed: Set[str] = set()
-        
+        running: Set[asyncio.Task] = set()
+        task_to_uid: Dict[asyncio.Task, str] = {}
+
         # Apply overall timeout
         async with async_timeout(self.MAX_WORKFLOW_TIMEOUT):
             while len(completed) < len(steps):
                 # Find steps ready to execute (all deps satisfied)
+                running_uids = set(task_to_uid.values())
                 ready = [
                     uid for uid, deps in graph.items()
-                    if uid not in completed and deps.issubset(completed)
+                    if uid not in completed
+                    and uid not in running_uids
+                    and deps.issubset(completed)
                 ]
-                
-                if not ready:
+
+                # Schedule ready steps
+                for uid in ready:
+                    task = asyncio.create_task(
+                        self._execute_step(
+                            step_map[uid],
+                            context,
+                            results,
+                            log,
+                            budget,
+                        )
+                    )
+                    running.add(task)
+                    task_to_uid[task] = uid
+
+                if not running and not ready:
                     raise RuntimeError("Workflow execution stuck - possible cycle")
                 
-                # Execute ready steps in parallel
-                tasks = [
-                    self._execute_step(
-                        step_map[uid],
-                        context,
-                        results,
-                        log,
-                        budget,
-                    )
-                    for uid in ready
-                ]
-                
-                step_results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # Process results
-                for uid, result in zip(ready, step_results):
-                    if isinstance(result, Exception):
-                        step = step_map[uid]
-                        if step.on_error == ErrorStrategy.STOP:
-                            raise result
-                        results[uid] = {"error": str(result)}
-                    else:
+                if not running:
+                    continue
+
+                # Wait for at least one task to complete
+                done, running = await asyncio.wait(
+                    running,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+
+                # Process completed tasks
+                for task in done:
+                    uid = task_to_uid.pop(task)
+                    try:
+                        result = task.result()
                         results[uid] = result
                         context.set_result(uid, result)
-                    
+                    except Exception as e:
+                        step = step_map[uid]
+                        if step.on_error == ErrorStrategy.STOP:
+                            # Cancel remaining running tasks
+                            for pending_task in running:
+                                pending_task.cancel()
+                            if running:
+                                await asyncio.gather(*running, return_exceptions=True)
+                            raise e
+                        results[uid] = {"error": str(e)}
+
                     completed.add(uid)
     
     async def _execute_step(
