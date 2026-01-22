@@ -20,7 +20,6 @@ from __future__ import annotations
 from typing import Dict, List, Any, Optional, Set, Callable, Awaitable
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 import asyncio
 import logging
 import uuid
@@ -257,18 +256,30 @@ class WorkflowExecutor:
         step_map = {s.uid: s for s in steps}
         completed: Set[str] = set()
         
+        # Pre-process graph for O(1) ready check
+        # in_degree: number of dependencies remaining for each step
+        in_degree: Dict[str, int] = {uid: len(deps) for uid, deps in graph.items()}
+
+        # dependents: adjacency list mapping step -> steps that depend on it
+        dependents: Dict[str, List[str]] = {uid: [] for uid in graph}
+        for uid, deps in graph.items():
+            for dep in deps:
+                if dep in dependents:
+                    dependents[dep].append(uid)
+
+        # Initial ready steps
+        ready_queue = [uid for uid, d in in_degree.items() if d == 0]
+
         # Apply overall timeout
         async with async_timeout(self.max_workflow_timeout):
             while len(completed) < len(steps):
-                # Find steps ready to execute (all deps satisfied)
-                ready = [
-                    uid for uid, deps in graph.items()
-                    if uid not in completed and deps.issubset(completed)
-                ]
-                
-                if not ready:
+                if not ready_queue:
                     raise RuntimeError("Workflow execution stuck - possible cycle")
                 
+                # Take all currently ready steps for parallel execution
+                current_batch = ready_queue
+                ready_queue = [] # Reset for next batch
+
                 # Execute ready steps in parallel
                 tasks = [
                     self._execute_step(
@@ -278,13 +289,13 @@ class WorkflowExecutor:
                         log,
                         budget,
                     )
-                    for uid in ready
+                    for uid in current_batch
                 ]
                 
                 step_results = await asyncio.gather(*tasks, return_exceptions=True)
                 
                 # Process results
-                for uid, result in zip(ready, step_results):
+                for uid, result in zip(current_batch, step_results):
                     if isinstance(result, Exception):
                         step = step_map[uid]
                         if step.on_error == ErrorStrategy.STOP:
@@ -295,6 +306,12 @@ class WorkflowExecutor:
                         context.set_result(uid, result)
                     
                     completed.add(uid)
+
+                    # Update dependencies
+                    for dependent in dependents[uid]:
+                        in_degree[dependent] -= 1
+                        if in_degree[dependent] == 0:
+                            ready_queue.append(dependent)
     
     async def _execute_step(
         self,
@@ -510,7 +527,7 @@ class OneXEngine:
             return None
         
         # Reconstruct context
-        context = ExecutionContext(
+        _ = ExecutionContext(
             user=original.input_snapshot.get("user"),
             execution_state=original.input_snapshot.get("execution_state", {}),
             input_params=original.input_snapshot.get("input_params", {}),
