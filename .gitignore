@@ -1,6 +1,7 @@
 # Rust
 /target
-Cargo.lock
+# Cargo.lock is tracked for reproducible builds
+
 
 # Python
 __pycache__/
