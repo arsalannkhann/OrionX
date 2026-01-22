@@ -80,6 +80,8 @@ class WorkflowCompiler:
         edges = ir_workflow.get("edges", [])
         
         node_uids: Set[str] = {"trigger"}
+        adjacency: Dict[str, List[str]] = {"trigger": []}
+
         for node in nodes:
             uid = node.get("uid", "")
             if uid in node_uids:
@@ -90,6 +92,8 @@ class WorkflowCompiler:
                     nodes=[uid]
                 ))
             node_uids.add(uid)
+            if uid not in adjacency:
+                adjacency[uid] = []
         
         # Validate edges
         for edge in edges:
@@ -112,9 +116,12 @@ class WorkflowCompiler:
                     message=f"Edge references non-existent target: {target}",
                     edges=[edge_uid]
                 ))
+
+            if source in adjacency:
+                adjacency[source].append(target)
         
         # Detect cycles
-        cycle = self._detect_cycle(nodes, edges)
+        cycle = self._detect_cycle(adjacency)
         if cycle:
             errors.append(ValidationIssue(
                 code="E_CYCLE",
@@ -124,7 +131,7 @@ class WorkflowCompiler:
             ))
         
         # Check for orphan nodes
-        reachable = self._find_reachable("trigger", edges)
+        reachable = self._find_reachable("trigger", adjacency)
         for node in nodes:
             uid = node.get("uid", "")
             if uid not in reachable:
@@ -191,16 +198,9 @@ class WorkflowCompiler:
             compiler_version=self.version
         )
     
-    def _detect_cycle(self, nodes: List[Dict], edges: List[Dict]) -> Optional[List[str]]:
+    def _detect_cycle(self, adjacency: Dict[str, List[str]]) -> Optional[List[str]]:
         """Detect cycles using DFS."""
-        all_uids = {"trigger"} | {n.get("uid") for n in nodes}
-        adjacency: Dict[str, List[str]] = {uid: [] for uid in all_uids}
-        
-        for edge in edges:
-            source = edge.get("source")
-            target = edge.get("target")
-            if source in adjacency:
-                adjacency[source].append(target)
+        all_uids = adjacency.keys()
         
         WHITE, GRAY, BLACK = 0, 1, 2
         color = {uid: WHITE for uid in all_uids}
@@ -232,16 +232,8 @@ class WorkflowCompiler:
         
         return None
     
-    def _find_reachable(self, start: str, edges: List[Dict]) -> Set[str]:
+    def _find_reachable(self, start: str, adjacency: Dict[str, List[str]]) -> Set[str]:
         """Find all nodes reachable from start using BFS."""
-        adjacency: Dict[str, List[str]] = {}
-        for edge in edges:
-            source = edge.get("source")
-            target = edge.get("target")
-            if source not in adjacency:
-                adjacency[source] = []
-            adjacency[source].append(target)
-        
         visited = {start}
         queue = deque([start])
         
