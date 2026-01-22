@@ -1,0 +1,13 @@
+[logging]
+level = "debug"
+format = "pretty"
+
+[database]
+postgres_url = "postgresql://elementa:elementa@localhost:5432/elementa_dev"
+mongodb_url = "mongodb://localhost:27017/elementa_dev"
+
+[vlm]
+api_key = "development-key"
+
+[monitoring]
+metrics_enabled = false

@@ -1,0 +1,22 @@
+[package]
+name = "elementa-models"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+validator.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+sqlx.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+hex.workspace = true
+regex = "1.10"
+
+[dev-dependencies]
+proptest.workspace = true

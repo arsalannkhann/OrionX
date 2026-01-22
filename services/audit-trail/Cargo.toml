@@ -1,0 +1,24 @@
+[package]
+name = "elementa-audit-trail"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+elementa-models = { path = "../../shared/models" }
+elementa-database = { path = "../../shared/database" }
+elementa-utils = { path = "../../shared/utils" }
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+axum.workspace = true
+tower-http.workspace = true
+sha2.workspace = true
+hex.workspace = true

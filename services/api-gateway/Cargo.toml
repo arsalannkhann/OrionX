@@ -1,0 +1,25 @@
+[package]
+name = "elementa-api-gateway"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+elementa-models = { path = "../../shared/models" }
+elementa-database = { path = "../../shared/database" }
+elementa-utils = { path = "../../shared/utils" }
+
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+validator.workspace = true
+prometheus.workspace = true

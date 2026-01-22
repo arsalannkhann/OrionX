@@ -1,0 +1,46 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+max_request_size = 16777216  # 16MB
+timeout_seconds = 30
+
+[database]
+postgres_url = "postgresql://elementa:elementa@localhost:5432/elementa"
+mongodb_url = "mongodb://localhost:27017/elementa"
+redis_url = "redis://localhost:6379"
+max_connections = 10
+connection_timeout_seconds = 30
+
+[email]
+smtp_host = "localhost"
+smtp_port = 587
+smtp_username = "elementa"
+smtp_password = "password"
+imap_host = "localhost"
+imap_port = 993
+from_address = "noreply@elementa.com"
+from_name = "Elementa Compliance System"
+
+[vlm]
+api_url = "https://api.openai.com/v1"
+api_key = "your-api-key-here"
+model = "gpt-4-vision-preview"
+max_tokens = 4096
+temperature = 0.1
+timeout_seconds = 60
+
+[chemical_db]
+epa_api_url = "https://api.epa.gov"
+cas_api_url = "https://api.cas.org"
+cache_ttl_hours = 24
+update_interval_hours = 168
+
+[logging]
+level = "info"
+format = "json"
+
+[monitoring]
+metrics_enabled = true
+metrics_port = 9090
+health_check_interval_seconds = 30
+prometheus_namespace = "elementa"

@@ -1,0 +1,32 @@
+[package]
+name = "elementa-utils"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+regex = "1.10"
+validator.workspace = true
+sqlx.workspace = true
+mongodb.workspace = true
+redis.workspace = true
+reqwest.workspace = true
+csv.workspace = true
+calamine.workspace = true
+quick-xml.workspace = true
+elementa-models = { path = "../models" }
+
+[dev-dependencies]
+proptest.workspace = true
