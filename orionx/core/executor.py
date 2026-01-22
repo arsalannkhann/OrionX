@@ -1,5 +1,5 @@
 """
-OneX Workflow Executor
+OrionX Workflow Executor
 
 Core execution engine for workflows.
 Refactored from OrionX WorkflowExecutor with UI concepts removed.
@@ -10,6 +10,10 @@ Key changes from OrionX:
 - ActionLog → StepLog
 - No client actions
 - No hop protocol
+
+Audit Remediation:
+- ExecutionBudget limits now from config (not hardcoded)
+- Execution logs persisted to storage backend
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from async_timeout import timeout as async_timeout
 
 from ..schemas.execution import ExecutionContext, ExecutionStatus, StepResult, WorkflowResult
 from ..schemas.workflow import Workflow, WorkflowStep, StepType, ErrorStrategy
+from ..config import get_config
 
 
 logger = logging.getLogger(__name__)
@@ -36,37 +41,43 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExecutionBudget:
-    """Tracks resource usage during execution."""
+    """
+    Tracks resource usage during execution.
+    
+    Limits are now loaded from configuration (not hardcoded).
+    Addresses audit finding: "Hardcoded ExecutionBudget limits"
+    """
     db_queries: int = 0
     api_calls: int = 0
     emails_sent: int = 0
     steps_executed: int = 0
     
-    # Limits (configurable via environment)
-    MAX_DB_QUERIES: int = 100
-    MAX_API_CALLS: int = 10
-    MAX_EMAILS: int = 10
-    MAX_STEPS: int = 100
+    def __post_init__(self):
+        config = get_config()
+        self.MAX_DB_QUERIES = config.limits.max_db_queries
+        self.MAX_API_CALLS = config.limits.max_api_calls
+        self.MAX_EMAILS = config.limits.max_emails
+        self.MAX_STEPS = config.limits.max_steps
     
     def check_db_query(self) -> None:
         self.db_queries += 1
         if self.db_queries > self.MAX_DB_QUERIES:
-            raise BudgetExceededError("Too many database queries")
+            raise BudgetExceededError(f"Too many database queries (max: {self.MAX_DB_QUERIES})")
     
     def check_api_call(self) -> None:
         self.api_calls += 1
         if self.api_calls > self.MAX_API_CALLS:
-            raise BudgetExceededError("Too many external API calls")
+            raise BudgetExceededError(f"Too many external API calls (max: {self.MAX_API_CALLS})")
     
     def check_email(self) -> None:
         self.emails_sent += 1
         if self.emails_sent > self.MAX_EMAILS:
-            raise BudgetExceededError("Too many emails")
+            raise BudgetExceededError(f"Too many emails (max: {self.MAX_EMAILS})")
     
     def check_step(self) -> None:
         self.steps_executed += 1
         if self.steps_executed > self.MAX_STEPS:
-            raise BudgetExceededError("Too many steps")
+            raise BudgetExceededError(f"Too many steps (max: {self.MAX_STEPS})")
 
 
 class BudgetExceededError(Exception):
@@ -121,19 +132,16 @@ StepHandler = Callable[[Dict[str, Any], ExecutionContext], Awaitable[Any]]
 
 class WorkflowExecutor:
     """
-    Executes OneX workflows.
+    Executes OrionX workflows.
     
     Features:
     - DAG-based dependency resolution
     - Parallel execution of independent steps
     - Execution logging
-    - Rate limiting and budgets
+    - Rate limiting and budgets (configurable)
+    - Persistent execution state
     - No UI knowledge
     """
-    
-    # Timeouts
-    DEFAULT_STEP_TIMEOUT = 30.0  # seconds
-    MAX_WORKFLOW_TIMEOUT = 300.0  # 5 minutes
     
     def __init__(
         self,
@@ -141,6 +149,11 @@ class WorkflowExecutor:
     ):
         self._handlers = step_handlers or {}
         self._active_executions: Dict[str, ExecutionLog] = {}
+        
+        # Load timeouts from config
+        config = get_config()
+        self.default_step_timeout = config.limits.step_timeout_seconds
+        self.max_workflow_timeout = config.limits.workflow_timeout_seconds
     
     def register_handler(self, step_type: StepType, handler: StepHandler) -> None:
         """Register a handler for a step type."""
@@ -245,7 +258,7 @@ class WorkflowExecutor:
         completed: Set[str] = set()
         
         # Apply overall timeout
-        async with async_timeout(self.MAX_WORKFLOW_TIMEOUT):
+        async with async_timeout(self.max_workflow_timeout):
             while len(completed) < len(steps):
                 # Find steps ready to execute (all deps satisfied)
                 ready = [
@@ -319,7 +332,7 @@ class WorkflowExecutor:
                 budget.check_email()
             
             # Execute with timeout
-            timeout = step.timeout_ms / 1000.0 if step.timeout_ms else self.DEFAULT_STEP_TIMEOUT
+            timeout = step.timeout_ms / 1000.0 if step.timeout_ms else self.default_step_timeout
             async with async_timeout(timeout):
                 result = await self._dispatch_step(step.type, params, context)
             
