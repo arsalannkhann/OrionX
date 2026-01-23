@@ -270,48 +270,71 @@ class WorkflowExecutor:
         # Initial ready steps
         ready_queue = [uid for uid, d in in_degree.items() if d == 0]
 
-        # Apply overall timeout
-        async with async_timeout(self.max_workflow_timeout):
-            while len(completed) < len(steps):
-                if not ready_queue:
-                    raise RuntimeError("Workflow execution stuck - possible cycle")
-                
-                # Take all currently ready steps for parallel execution
-                current_batch = ready_queue
-                ready_queue = [] # Reset for next batch
+        # Active tasks
+        pending_tasks: Set[asyncio.Task] = set()
+        task_to_uid: Dict[asyncio.Task, str] = {}
 
-                # Execute ready steps in parallel
-                tasks = [
-                    self._execute_step(
-                        step_map[uid],
-                        context,
-                        results,
-                        log,
-                        budget,
+        try:
+            # Apply overall timeout
+            async with async_timeout(self.max_workflow_timeout):
+                while len(completed) < len(steps):
+                    # Schedule new tasks
+                    while ready_queue:
+                        uid = ready_queue.pop(0)
+                        task = asyncio.create_task(
+                            self._execute_step(
+                                step_map[uid],
+                                context,
+                                results,
+                                log,
+                                budget,
+                            )
+                        )
+                        pending_tasks.add(task)
+                        task_to_uid[task] = uid
+
+                    if not pending_tasks:
+                        if len(completed) < len(steps):
+                            raise RuntimeError("Workflow execution stuck - possible cycle")
+                        break
+
+                    # Wait for any task to complete
+                    done, _ = await asyncio.wait(
+                        pending_tasks,
+                        return_when=asyncio.FIRST_COMPLETED
                     )
-                    for uid in current_batch
-                ]
-                
-                step_results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # Process results
-                for uid, result in zip(current_batch, step_results):
-                    if isinstance(result, Exception):
-                        step = step_map[uid]
-                        if step.on_error == ErrorStrategy.STOP:
-                            raise result
-                        results[uid] = {"error": str(result)}
-                    else:
-                        results[uid] = result
-                        context.set_result(uid, result)
-                    
-                    completed.add(uid)
 
-                    # Update dependencies
-                    for dependent in dependents[uid]:
-                        in_degree[dependent] -= 1
-                        if in_degree[dependent] == 0:
-                            ready_queue.append(dependent)
+                    # Process completed tasks
+                    for task in done:
+                        pending_tasks.remove(task)
+                        uid = task_to_uid.pop(task)
+
+                        try:
+                            result = task.result()
+                            results[uid] = result
+                            context.set_result(uid, result)
+                        except Exception as e:
+                            step = step_map[uid]
+                            if step.on_error == ErrorStrategy.STOP:
+                                raise e
+                            results[uid] = {"error": str(e)}
+
+                        completed.add(uid)
+
+                        # Update dependencies
+                        for dependent in dependents[uid]:
+                            in_degree[dependent] -= 1
+                            if in_degree[dependent] == 0:
+                                ready_queue.append(dependent)
+        finally:
+            # Ensure all pending tasks are cancelled on exit (error, timeout, or success)
+            if pending_tasks:
+                for task in pending_tasks:
+                    if not task.done():
+                        task.cancel()
+
+                # Wait for cancellations to complete
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
     
     async def _execute_step(
         self,
