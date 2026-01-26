@@ -19,6 +19,7 @@ Audit Remediation:
 from __future__ import annotations
 from typing import Dict, List, Any, Optional, Set, Callable, Awaitable
 from dataclasses import dataclass, field
+from collections import deque
 from datetime import datetime
 import asyncio
 import logging
@@ -268,50 +269,65 @@ class WorkflowExecutor:
                     dependents[dep].append(uid)
 
         # Initial ready steps
-        ready_queue = [uid for uid, d in in_degree.items() if d == 0]
+        ready_queue = deque([uid for uid, d in in_degree.items() if d == 0])
+
+        # Track running tasks: {task: step_uid}
+        running_tasks: Dict[asyncio.Task, str] = {}
 
         # Apply overall timeout
-        async with async_timeout(self.max_workflow_timeout):
-            while len(completed) < len(steps):
-                if not ready_queue:
-                    raise RuntimeError("Workflow execution stuck - possible cycle")
-                
-                # Take all currently ready steps for parallel execution
-                current_batch = ready_queue
-                ready_queue = [] # Reset for next batch
+        try:
+            async with async_timeout(self.max_workflow_timeout):
+                while len(completed) < len(steps):
+                    # Submit newly ready steps
+                    while ready_queue:
+                        uid = ready_queue.popleft()
+                        task = asyncio.create_task(
+                            self._execute_step(
+                                step_map[uid],
+                                context,
+                                results,
+                                log,
+                                budget,
+                            )
+                        )
+                        running_tasks[task] = uid
 
-                # Execute ready steps in parallel
-                tasks = [
-                    self._execute_step(
-                        step_map[uid],
-                        context,
-                        results,
-                        log,
-                        budget,
+                    if not running_tasks:
+                        raise RuntimeError("Workflow execution stuck - possible cycle")
+
+                    # Wait for at least one task to complete
+                    done, _ = await asyncio.wait(
+                        running_tasks.keys(),
+                        return_when=asyncio.FIRST_COMPLETED
                     )
-                    for uid in current_batch
-                ]
-                
-                step_results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # Process results
-                for uid, result in zip(current_batch, step_results):
-                    if isinstance(result, Exception):
-                        step = step_map[uid]
-                        if step.on_error == ErrorStrategy.STOP:
-                            raise result
-                        results[uid] = {"error": str(result)}
-                    else:
-                        results[uid] = result
-                        context.set_result(uid, result)
                     
-                    completed.add(uid)
+                    # Process completed tasks
+                    for task in done:
+                        uid = running_tasks.pop(task)
+                        try:
+                            result = task.result()
+                            results[uid] = result
+                            context.set_result(uid, result)
+                        except Exception as e:
+                            step = step_map[uid]
+                            if step.on_error == ErrorStrategy.STOP:
+                                raise e
+                            results[uid] = {"error": str(e)}
 
-                    # Update dependencies
-                    for dependent in dependents[uid]:
-                        in_degree[dependent] -= 1
-                        if in_degree[dependent] == 0:
-                            ready_queue.append(dependent)
+                        completed.add(uid)
+
+                        # Update dependencies
+                        for dependent in dependents[uid]:
+                            in_degree[dependent] -= 1
+                            if in_degree[dependent] == 0:
+                                ready_queue.append(dependent)
+
+        except Exception:
+            # Ensure pending tasks are cancelled on error or timeout
+            for task in running_tasks:
+                if not task.done():
+                    task.cancel()
+            raise
     
     async def _execute_step(
         self,
