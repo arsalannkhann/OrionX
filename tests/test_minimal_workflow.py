@@ -17,11 +17,9 @@ Validates:
 """
 
 import pytest
-import asyncio
-from datetime import datetime
 
 from orionx.core.executor import OneXEngine, WorkflowExecutor
-from orionx.core.action_handlers import StepHandlers, StepResult
+from orionx.core.action_handlers import StepResult
 from orionx.schemas.workflow import (
     Workflow,
     WorkflowStep,

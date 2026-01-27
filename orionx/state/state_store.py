@@ -12,11 +12,10 @@ Key changes:
 """
 
 from __future__ import annotations
-from typing import Dict, List, Any, Optional, Callable, Set
+from typing import Dict, List, Any, Callable, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-import json
 import logging
 
 

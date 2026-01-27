@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 
-from ..schemas.execution import ExecutionStatus, StepResult
+from ..schemas.execution import ExecutionStatus
 
 
 logger = logging.getLogger(__name__)

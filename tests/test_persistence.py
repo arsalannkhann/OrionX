@@ -6,16 +6,13 @@ Addresses audit finding: "Zero persistence for workflow execution state"
 """
 
 import pytest
-import asyncio
-import os
 from datetime import datetime
-from pathlib import Path
 
 from orionx.persistence.base import ExecutionRecord
 from orionx.persistence.memory import InMemoryExecutionStore
 from orionx.persistence.sqlite import SQLiteExecutionStore
 from orionx.schemas.execution import ExecutionStatus
-from orionx.config import get_config, reset_config, load_config
+from orionx.config import reset_config, load_config
 
 
 class TestInMemoryStore:

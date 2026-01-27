@@ -16,11 +16,9 @@ Guarantees verified:
 
 import pytest
 import sys
-import asyncio
-from datetime import datetime
 
-from orionx.core.executor import OneXEngine, WorkflowExecutor
-from orionx.core.action_handlers import StepHandlers, StepResult
+from orionx.core.executor import OneXEngine
+from orionx.core.action_handlers import StepResult
 from orionx.schemas.workflow import (
     Workflow,
     WorkflowStep,
@@ -28,7 +26,7 @@ from orionx.schemas.workflow import (
     StepType,
     TriggerType,
 )
-from orionx.schemas.execution import ExecutionContext, ExecutionStatus
+from orionx.schemas.execution import ExecutionContext
 
 
 class TestUIAgnostic:
@@ -287,9 +285,6 @@ class TestIndependence:
     def test_no_orionx_imports(self):
         """Verify no OrionX modules are loaded."""
         # Import all OneX modules
-        import orionx
-        from orionx.core.executor import OneXEngine
-        from orionx.schemas.workflow import Workflow
         
         # Check for OrionX imports
         orionx_patterns = ['OrionX', 'schemas.page', 'schemas.element', 'engine.workflow']
@@ -305,10 +300,7 @@ class TestIndependence:
         from orionx import (
             OneXEngine,
             ExecutionContext,
-            ExecutionStatus,
             Workflow,
-            WorkflowStep,
-            StepType,
         )
         
         # All imports should be usable

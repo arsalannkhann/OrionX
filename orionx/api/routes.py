@@ -14,10 +14,9 @@ from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 from datetime import datetime
-from enum import Enum
 
 from ..core.executor import OneXEngine
-from ..schemas.execution import ExecutionContext, ExecutionStatus
+from ..schemas.execution import ExecutionContext
 from ..schemas.workflow import Workflow, TriggerType
 
 
@@ -157,7 +156,7 @@ async def health_check():
 )
 async def get_schema_info():
     """Get schema information."""
-    from ..schemas.workflow import StepType, TriggerType
+    from ..schemas.workflow import StepType
     
     step_docs = {
         "create_entity": "Create a database entity",

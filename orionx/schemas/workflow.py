@@ -7,6 +7,7 @@ Refactored from OrionX to remove element_event, page_load, and other UI concepts
 
 from __future__ import annotations
 from typing import Dict, List, Any, Optional
+from collections import deque
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from uuid import uuid4
@@ -206,11 +207,11 @@ class Workflow(BaseModel):
                     dependents[dep].append(step.uid)
         
         # Kahn's algorithm
-        queue = [uid for uid, deg in in_degree.items() if deg == 0]
+        queue = deque([uid for uid, deg in in_degree.items() if deg == 0])
         result = []
         
         while queue:
-            uid = queue.pop(0)
+            uid = queue.popleft()
             result.append(step_map[uid])
             
             for dependent in dependents[uid]:
