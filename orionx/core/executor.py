@@ -191,16 +191,12 @@ class WorkflowExecutor:
         self._active_executions[execution_id] = log
         
         try:
-            # Build dependency graph
-            step_graph = self._build_dependency_graph(workflow.steps)
-            
             # Track results for each step
             results: Dict[str, Any] = {}
             
             # Execute in dependency order
             await self._execute_graph(
                 workflow.steps,
-                step_graph,
                 results,
                 context,
                 log,
@@ -232,22 +228,9 @@ class WorkflowExecutor:
         
         return log
     
-    def _build_dependency_graph(
-        self,
-        steps: List[WorkflowStep]
-    ) -> Dict[str, Set[str]]:
-        """Build adjacency list of step dependencies."""
-        graph: Dict[str, Set[str]] = {}
-        
-        for step in steps:
-            graph[step.uid] = set(step.depends_on) if step.depends_on else set()
-        
-        return graph
-    
     async def _execute_graph(
         self,
         steps: List[WorkflowStep],
-        graph: Dict[str, Set[str]],
         results: Dict[str, Any],
         context: ExecutionContext,
         log: ExecutionLog,
@@ -259,14 +242,16 @@ class WorkflowExecutor:
         
         # Pre-process graph for O(1) ready check
         # in_degree: number of dependencies remaining for each step
-        in_degree: Dict[str, int] = {uid: len(deps) for uid, deps in graph.items()}
-
+        in_degree: Dict[str, int] = {}
         # dependents: adjacency list mapping step -> steps that depend on it
-        dependents: Dict[str, List[str]] = {uid: [] for uid in graph}
-        for uid, deps in graph.items():
+        dependents: Dict[str, List[str]] = {s.uid: [] for s in steps}
+
+        for step in steps:
+            deps = step.depends_on or []
+            in_degree[step.uid] = len(deps)
             for dep in deps:
                 if dep in dependents:
-                    dependents[dep].append(uid)
+                    dependents[dep].append(step.uid)
 
         # Initial ready steps
         ready_queue = deque([uid for uid, d in in_degree.items() if d == 0])
