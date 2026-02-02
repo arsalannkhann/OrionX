@@ -8,6 +8,7 @@ Copied from OrionX with minimal changes.
 from __future__ import annotations
 from typing import Dict, List, Set, Optional, Tuple
 from collections import deque
+import heapq
 from datetime import datetime
 import re
 
@@ -259,21 +260,30 @@ class WorkflowCompiler:
         adjacency: Dict[str, List[str]],
         in_degree: Dict[str, int]
     ) -> Tuple[List[str], Dict[str, int]]:
-        """Topological sort using Kahn's algorithm."""
-        queue = deque([uid for uid, deg in in_degree.items() if deg == 0])
+        """
+        Topological sort using Kahn's algorithm.
+
+        Optimization:
+        Uses a min-heap (heapq) instead of sorting a deque every iteration.
+        - Previous: O(N * Width * log Width) due to repeated sorting
+        - Current: O(N * log Width) using heap for automatic ordering
+        """
+        # Use a heap to ensure deterministic order (lexicographical)
+        # while maintaining O(log N) for insertions/removals
+        queue = [uid for uid, deg in in_degree.items() if deg == 0]
+        heapq.heapify(queue)
         result = []
         depths = {uid: 0 for uid in queue}
         
         while queue:
-            queue = deque(sorted(queue))
-            node = queue.popleft()
+            node = heapq.heappop(queue)
             result.append(node)
             
             for neighbor in adjacency.get(node, []):
                 in_degree[neighbor] -= 1
                 depths[neighbor] = max(depths.get(neighbor, 0), depths[node] + 1)
                 if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
+                    heapq.heappush(queue, neighbor)
         
         return result, depths
 
