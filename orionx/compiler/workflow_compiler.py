@@ -8,6 +8,7 @@ Copied from OrionX with minimal changes.
 from __future__ import annotations
 from typing import Dict, List, Set, Optional, Tuple
 from collections import deque
+import heapq
 from datetime import datetime
 import re
 
@@ -113,8 +114,16 @@ class WorkflowCompiler:
                     edges=[edge_uid]
                 ))
         
+        # Build adjacency lists for validation
+        adjacency: Dict[str, List[str]] = {uid: [] for uid in node_uids}
+        for edge in edges:
+            source = edge.get("source")
+            target = edge.get("target")
+            if source in adjacency:
+                adjacency[source].append(target)
+
         # Detect cycles
-        cycle = self._detect_cycle(nodes, edges)
+        cycle = self._detect_cycle(adjacency, node_uids)
         if cycle:
             errors.append(ValidationIssue(
                 code="E_CYCLE",
@@ -124,7 +133,7 @@ class WorkflowCompiler:
             ))
         
         # Check for orphan nodes
-        reachable = self._find_reachable("trigger", edges)
+        reachable = self._find_reachable("trigger", adjacency)
         for node in nodes:
             uid = node.get("uid", "")
             if uid not in reachable:
@@ -191,17 +200,8 @@ class WorkflowCompiler:
             compiler_version=self.version
         )
     
-    def _detect_cycle(self, nodes: List[Dict], edges: List[Dict]) -> Optional[List[str]]:
+    def _detect_cycle(self, adjacency: Dict[str, List[str]], all_uids: Set[str]) -> Optional[List[str]]:
         """Detect cycles using DFS."""
-        all_uids = {"trigger"} | {n.get("uid") for n in nodes}
-        adjacency: Dict[str, List[str]] = {uid: [] for uid in all_uids}
-        
-        for edge in edges:
-            source = edge.get("source")
-            target = edge.get("target")
-            if source in adjacency:
-                adjacency[source].append(target)
-        
         WHITE, GRAY, BLACK = 0, 1, 2
         color = {uid: WHITE for uid in all_uids}
         parent = {uid: None for uid in all_uids}
@@ -232,16 +232,8 @@ class WorkflowCompiler:
         
         return None
     
-    def _find_reachable(self, start: str, edges: List[Dict]) -> Set[str]:
+    def _find_reachable(self, start: str, adjacency: Dict[str, List[str]]) -> Set[str]:
         """Find all nodes reachable from start using BFS."""
-        adjacency: Dict[str, List[str]] = {}
-        for edge in edges:
-            source = edge.get("source")
-            target = edge.get("target")
-            if source not in adjacency:
-                adjacency[source] = []
-            adjacency[source].append(target)
-        
         visited = {start}
         queue = deque([start])
         
@@ -260,20 +252,22 @@ class WorkflowCompiler:
         in_degree: Dict[str, int]
     ) -> Tuple[List[str], Dict[str, int]]:
         """Topological sort using Kahn's algorithm."""
-        queue = deque([uid for uid, deg in in_degree.items() if deg == 0])
+        # Use a heap to ensure deterministic order (lexicographically first among available nodes)
+        queue = [uid for uid, deg in in_degree.items() if deg == 0]
+        heapq.heapify(queue)
+
         result = []
         depths = {uid: 0 for uid in queue}
         
         while queue:
-            queue = deque(sorted(queue))
-            node = queue.popleft()
+            node = heapq.heappop(queue)
             result.append(node)
             
             for neighbor in adjacency.get(node, []):
                 in_degree[neighbor] -= 1
                 depths[neighbor] = max(depths.get(neighbor, 0), depths[node] + 1)
                 if in_degree[neighbor] == 0:
-                    queue.append(neighbor)
+                    heapq.heappush(queue, neighbor)
         
         return result, depths
 
